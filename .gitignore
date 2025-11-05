@@ -1,0 +1,70 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.manifest
+*.spec
+
+# --- Virtualenv / Tools ---
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.cache/
+
+# --- Editors/OS ---
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Env / Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Logs / Coverage ---
+*.log
+uvicorn*.log
+coverage.xml
+htmlcov/
+.coverage
+.coverage.*
+pytestdebug.log
+
+# --- Databases / Local state ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- FastAPI static & uploads ---
+# Subidas generadas por usuarios (no versionar)
+uploads/
+# Si necesitas mantener el dir vacío en el repo:
+# (crea uploads/.gitkeep)
+
+# Si generas thumbnails o artefactos en static/, ignóralos aquí:
+# static/generated/
+
+# --- Docker (si aplica) ---
+*.pid
+docker/*.env
+docker-compose.override.yml
+
+# --- Misc ---
+*.tmp
+*.bak
