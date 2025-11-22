@@ -52,3 +52,4 @@ def list_media_page(db: Session, user_id: str, page: int, size: int):
         .offset((page-1)*size).limit(size)
     ).all()
     return total, items
+

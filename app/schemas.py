@@ -69,6 +69,7 @@ class MediaOut(BaseModel):
     mime_type: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    type: str
 
 
 class PageMedia(BaseModel):

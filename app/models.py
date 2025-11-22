@@ -35,14 +35,23 @@ class Media(Base):
     __tablename__ = "media"
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uuid_str)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
-    url: Mapped[str] = mapped_column(String)          # ruta pública (static)
-    thumb_url: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # contenido principal
+    url: Mapped[str] = mapped_column(String)                    # imagen o video URL
+    thumb_url: Mapped[str | None] = mapped_column(String)       # opcional
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    # nuevo campo importante
+    type: Mapped[str] = mapped_column(String, index=True, default="wiki")
+
+    # metadata opcional
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     mime_type: Mapped[str | None] = mapped_column(String, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped[User] = relationship(back_populates="media")
+

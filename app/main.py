@@ -89,6 +89,7 @@ def update_me(data: UserUpdate, db: Session = Depends(get_db), current: User = D
 def list_gallery(
     page: int = 1, pageSize: int = 20,
     db: Session = Depends(get_db),
+    type: str | None = None,
     current: User = Depends(get_current_user),
 ):
     total, items = crud.list_media_page(db, current.id, page, pageSize)
@@ -99,12 +100,13 @@ async def upload_media(
     file: UploadFile = File(...),
     title: str | None = Form(None),
     description: str | None = Form(None),
+    type: str = Form("wiki"),      # <--- KEY: le das un tipo por defecto
     db: Session = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    # Guardar en /uploads/u/<userId>/<uuid>.<ext>
     user_dir = UPLOAD_DIR / "u" / current.id
     user_dir.mkdir(parents=True, exist_ok=True)
+
     ext = Path(file.filename).suffix
     fname = f"{uuid.uuid4()}{ext}"
     dest = user_dir / fname
@@ -124,6 +126,7 @@ async def upload_media(
         width=None, height=None,
         size_bytes=None,
         mime_type=file.content_type,
+        type=type  # <----------------------------- IMPORTANTE
     )
     return media
 
