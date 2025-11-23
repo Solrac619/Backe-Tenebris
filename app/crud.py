@@ -1,55 +1,141 @@
-from sqlalchemy.orm import Session
-from sqlalchemy import select, func
-from datetime import datetime, timedelta
-from . import models
-from .utils import hash_refresh_token, create_refresh_string
+# app/crud.py
+from app.supabase_cliente import supabase
 
-def get_user_by_email(db: Session, email: str) -> models.User | None:
-    return db.scalar(select(models.User).where(models.User.email == email))
 
-def create_user(db: Session, email: str, password_hash: str, display_name: str = "") -> models.User:
-    u = models.User(email=email, password_hash=password_hash, display_name=display_name)
-    db.add(u)
-    db.commit()
-    db.refresh(u)
-    return u
+# ======================================================
+# PROFILES (opcional, si manejas perfil extra del usuario)
+# ======================================================
 
-def issue_refresh(db: Session, user_id: str, days: int):
-    raw = create_refresh_string()
-    rec = models.RefreshToken(
-        user_id=user_id,
-        token_hash=hash_refresh_token(raw),
-        expires_at=datetime.utcnow() + timedelta(days=days)
+def get_profile(user_id: str):
+    """
+    Obtiene el perfil (tabla profiles).
+    """
+    res = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
+    return res.data
+
+
+def update_profile(user_id: str, data: dict):
+    """
+    Actualiza campos del perfil del usuario.
+    """
+    res = (
+        supabase.table("profiles")
+        .update(data)
+        .eq("id", user_id)
+        .execute()
     )
-    db.add(rec); db.commit(); db.refresh(rec)
-    return raw, rec
+    return res.data[0] if res.data else None
 
-def find_valid_refresh(db: Session, user_id: str, raw_token: str):
-    hashed = hash_refresh_token(raw_token)
-    q = select(models.RefreshToken).where(
-        models.RefreshToken.user_id == user_id,
-        models.RefreshToken.token_hash == hashed,
-        models.RefreshToken.revoked_at.is_(None),
-        models.RefreshToken.expires_at > datetime.utcnow(),
+
+def create_profile(user_id: str, display_name: str = "", avatar_url: str = None):
+    """
+    Crea el perfil del usuario después del registro.
+    """
+    payload = {
+        "id": user_id,
+        "display_name": display_name,
+        "avatar_url": avatar_url
+    }
+
+    res = supabase.table("profiles").insert(payload).execute()
+    return res.data[0]
+
+
+# ======================================================
+# MEDIA (wiki, personajes, escenarios, videos, etc.)
+# ======================================================
+
+def create_media(data: dict):
+    """
+    Inserta un registro en la tabla media.
+    data: {
+        "user_id": str,
+        "url": str,
+        "title": str | None,
+        "description": str | None,
+        "type": str,
+        "thumb_url": str | None,
+        "mime_type": str | None,
+        "width": int | None,
+        "height": int | None,
+        "size_bytes": int | None
+    }
+    """
+    res = supabase.table("media").insert(data).execute()
+    return res.data[0]
+
+
+def get_media(media_id: str, user_id: str):
+    """
+    Obtiene un media específico que pertenece a un usuario.
+    """
+    res = (
+        supabase.table("media")
+        .select("*")
+        .eq("id", media_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
     )
-    return db.scalar(q)
+    return res.data
 
-def revoke_refresh(db: Session, rec: models.RefreshToken):
-    rec.revoked_at = datetime.utcnow()
-    db.commit()
 
-def create_media(db: Session, **data) -> models.Media:
-    m = models.Media(**data)
-    db.add(m); db.commit(); db.refresh(m)
-    return m
+def list_media(user_id: str, page: int = 1, page_size: int = 20, type: str | None = None):
+    """
+    Lista media paginado.
+    Soporta filtro por type ("wiki", "character", "stage", "youtube", etc.)
+    """
+    query = supabase.table("media").select("*").eq("user_id", user_id)
 
-def list_media_page(db: Session, user_id: str, page: int, size: int):
-    total = db.scalar(select(func.count()).select_from(models.Media).where(models.Media.user_id == user_id)) or 0
-    items = db.scalars(
-        select(models.Media)
-        .where(models.Media.user_id == user_id)
-        .order_by(models.Media.created_at.desc())
-        .offset((page-1)*size).limit(size)
-    ).all()
-    return total, items
+    if type:
+        query = query.eq("type", type)
 
+    start = (page - 1) * page_size
+    end = start + page_size - 1
+
+    res = (
+        query
+        .order("created_at", desc=True)
+        .range(start, end)
+        .execute()
+    )
+
+    return res.data
+
+
+def delete_media(media_id: str, user_id: str):
+    """
+    Elimina un media si pertenece al usuario.
+    """
+    res = (
+        supabase.table("media")
+        .delete()
+        .eq("id", media_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return res.data
+
+
+# ======================================================
+# STORAGE (uploads)
+# ======================================================
+
+def upload_file(user_id: str, file):
+    """
+    Sube un archivo al bucket 'uploads' y retorna la URL pública.
+    El archivo debe ser un `UploadFile` de FastAPI.
+    """
+    filename = f"{user_id}/{file.filename}"
+
+    file_bytes = file.file.read()
+
+    supabase.storage.from_("uploads").upload(
+        filename,
+        file_bytes,
+        file_options={"content-type": file.content_type},
+    )
+
+    public_url = supabase.storage.from_("uploads").get_public_url(filename)
+
+    return public_url
