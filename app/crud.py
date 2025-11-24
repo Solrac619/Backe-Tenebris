@@ -1,5 +1,10 @@
 # app/crud.py
 from app.supabase_cliente import supabase
+import requests
+import os
+
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID")
 
 
 # ======================================================
@@ -7,11 +12,23 @@ from app.supabase_cliente import supabase
 # ======================================================
 
 def get_profile(user_id: str):
-    """
-    Obtiene el perfil (tabla profiles).
-    """
-    res = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
-    return res.data
+    # Intentar obtener perfil
+    res = supabase.table("profiles").select("*").eq("id", user_id).execute()
+
+    if res.data and len(res.data) > 0:
+        return res.data[0]
+
+    # Si no existe → crearlo automáticamente
+    default_profile = {
+        "id": user_id,
+        "display_name": "",
+        "avatar_url": None
+    }
+
+    created = supabase.table("profiles").insert(default_profile).execute()
+
+    return created.data[0]
+
 
 
 def update_profile(user_id: str, data: dict):
@@ -80,27 +97,27 @@ def get_media(media_id: str, user_id: str):
     return res.data
 
 
-def list_media(user_id: str, page: int = 1, page_size: int = 20, type: str | None = None):
-    """
-    Lista media paginado.
-    Soporta filtro por type ("wiki", "character", "stage", "youtube", etc.)
-    """
-    query = supabase.table("media").select("*").eq("user_id", user_id)
+def list_media(user_id: str, page: int, pageSize: int, type: str | None):
+    query = supabase.table("media").select("*")
 
-    if type:
-        query = query.eq("type", type)
+    # 🔥 Caso especial: videos públicos de YouTube
+    if type == "youtube":
+        query = query.eq("type", "youtube")
+    else:
+        # Usar user_id solo en uploads personales
+        query = query.eq("user_id", user_id)
 
-    start = (page - 1) * page_size
-    end = start + page_size - 1
+        if type:
+            query = query.eq("type", type)
 
-    res = (
-        query
-        .order("created_at", desc=True)
-        .range(start, end)
-        .execute()
-    )
+    # Paginación
+    from_row = (page - 1) * pageSize
+    to_row = from_row + pageSize - 1
+
+    res = query.range(from_row, to_row).order("created_at", desc=True).execute()
 
     return res.data
+
 
 
 def delete_media(media_id: str, user_id: str):
@@ -121,21 +138,87 @@ def delete_media(media_id: str, user_id: str):
 # STORAGE (uploads)
 # ======================================================
 
-def upload_file(user_id: str, file):
+def upload_file(user_id: str, file, type: str = None):
     """
     Sube un archivo al bucket 'uploads' y retorna la URL pública.
-    El archivo debe ser un `UploadFile` de FastAPI.
+
+    Si type == 'avatar' → lo guarda en uploads/avatars/
+    Si no → uploads/<user_id>/
     """
-    filename = f"{user_id}/{file.filename}"
+
+    # Limpia el nombre del archivo
+    safe_name = file.filename.replace(" ", "_").lower()
+
+    # --- DESTINO SEGÚN TYPE ---
+    if type == "avatar":
+        filename = f"avatars/{safe_name}" 
+    elif type == "lore":
+        filename = f"lore/{safe_name}"  # Carpeta lore del usuario
+    else:
+        filename = f"{user_id}/{safe_name}"  # Carpeta del usuario
 
     file_bytes = file.file.read()
 
+    # Subida al bucket
     supabase.storage.from_("uploads").upload(
         filename,
         file_bytes,
         file_options={"content-type": file.content_type},
     )
 
+    # URL pública
     public_url = supabase.storage.from_("uploads").get_public_url(filename)
-
     return public_url
+
+
+
+def sync_youtube_videos():
+    """
+    Obtiene videos del canal de YouTube y sincroniza con la tabla media.
+    Solo inserta los que no existan.
+    """
+
+    url = (
+        f"https://www.googleapis.com/youtube/v3/search?"
+        f"key={YOUTUBE_API_KEY}&channelId={YOUTUBE_CHANNEL_ID}"
+        f"&part=snippet,id&order=date&maxResults=20"
+    )
+
+    res = requests.get(url).json()
+
+    if "items" not in res:
+        return []
+
+    new_items = []
+
+    for item in res["items"]:
+        if item["id"]["kind"] != "youtube#video":
+            continue
+
+        video_id = item["id"]["videoId"]
+        youtube_url = f"https://youtu.be/{video_id}"
+
+        # ¿Ya existe?
+        exists = supabase.table("media").select("id").eq("url", youtube_url).execute()
+
+        if exists.data:
+            continue
+
+        snippet = item["snippet"]
+
+        thumbnail = snippet["thumbnails"]["high"]["url"]
+
+        media = {
+            "url": youtube_url,
+            "thumb_url": thumbnail,
+            "title": snippet["title"],
+            "description": snippet.get("description", ""),
+            "type": "youtube",
+            "mime_type": "youtube",
+            "user_id": None,  # viene de YouTube, no es de usuario
+        }
+
+        inserted = supabase.table("media").insert(media).execute()
+        new_items.append(inserted.data[0])
+
+    return new_items

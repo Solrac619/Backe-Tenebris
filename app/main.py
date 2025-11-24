@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.deps import get_current_user
-import app.crud
+from app import crud
 
 from pathlib import Path
 from datetime import datetime
@@ -81,22 +81,24 @@ def update_profile(
 # MEDIA (upload / list / delete)
 # ============================
 
+@app.post("/v1/gallery/youtube/sync")
+def sync_youtube():
+    new_items = crud.sync_youtube_videos()
+    return {"added": len(new_items), "items": new_items}
+
+
 @app.post("/v1/gallery/upload")
 async def upload_media(
     file: UploadFile = File(...),
     title: str | None = Form(None),
     description: str | None = Form(None),
-    type: str = Form("wiki"),   # wiki, character, stage, youtube, etc.
+    type: str = Form("wiki"),
     user = Depends(get_current_user)
 ):
-    """
-    Sube un archivo a Supabase Storage y guarda metadata en la tabla media.
-    """
+    # 1. Subir archivo
+    url = crud.upload_file(user.id, file, type)
 
-    # 1. Subir archivo a Supabase Storage
-    url = crud.upload_file(user.id, file)
-
-    # 2. Crear registro en la tabla media
+    # 2. Insertar en tabla media
     media = crud.create_media({
         "user_id": user.id,
         "url": url,
