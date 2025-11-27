@@ -10,6 +10,20 @@ from pathlib import Path
 from datetime import datetime
 import uuid
 
+from tempfile import NamedTemporaryFile
+import shutil
+import os
+
+import requests
+from fastapi import Body
+
+from app.supabase_cliente import supabase
+from app.ai_embeddings import extract_pdf_chunks, store_embeddings, get_embedding
+
+import os
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+
 # ---------------------------------------------------------
 # CONFIG FASTAPI
 # ---------------------------------------------------------
@@ -146,7 +160,7 @@ def delete_media(media_id: str, user = Depends(get_current_user)):
         raise HTTPException(404, "Media not found or not allowed")
     return {"deleted": True}
 
-    # ---------------------------------------------------------
+# ---------------------------------------------------------
 # GAMES DATA
 # ---------------------------------------------------------
 
