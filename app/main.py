@@ -146,6 +146,100 @@ def delete_media(media_id: str, user = Depends(get_current_user)):
         raise HTTPException(404, "Media not found or not allowed")
     return {"deleted": True}
 
+    # ---------------------------------------------------------
+# GAMES DATA
+# ---------------------------------------------------------
+
+# Importar el esquema Pydantic (asumiendo que se llama GameData)
+# from app.schemas import GameData 
+# Si no usas schemas.py, debes definir Pydantic.GameData en main.py
+
+@app.post("/v1/games")
+def create_game_session(
+    data: GameData, 
+    user = Depends(get_current_user)
+):
+    """
+    Crea un nuevo registro de partida en Supabase. 
+    Unity enviará un POST al inicio de la sesión.
+    """
+    # 1. Generar un UUID único para la partida
+    session_id = str(uuid.uuid4())
+    
+    # 2. Preparar los datos iniciales
+    game_data_to_insert = {
+        "id": session_id,
+        "user_id": user.id, # Asocia la partida al usuario autenticado
+        "score": data.score,
+        "currentZone": data.currentZone,
+        "deaths": data.deaths,
+        # Puedes añadir "created_at": datetime.now() si lo necesita Supabase
+    }
+
+    # 3. Insertar en la BD y manejar errores (función a crear en crud.py)
+    created_game = crud.create_game_session(game_data_to_insert)
+
+    if created_game is None:
+        raise HTTPException(500, "Error creating game session in database.")
+
+    # 4. Devolver el objeto GameData completo, incluyendo el ID
+    # Esto es crucial para que Unity asigne el ID que usará para las actualizaciones (PUT)
+    response_data = GameData(
+        gameSessionID=session_id,
+        score=created_game['score'],
+        currentZone=created_game['currentZone'],
+        deaths=created_game['deaths']
+    )
+    return response_data
+
+@app.put("/v1/games/{session_id}")
+def update_game_data(
+    session_id: str,
+    data: GameData,
+    user = Depends(get_current_user)
+):
+    """
+    Actualiza la puntuación, zona y muertes para una partida existente (ID único).
+    Unity enviará un PUT cada vez que se actualice un valor.
+    """
+    # Preparar solo los campos que Unity actualiza
+    update_fields = {
+        "score": data.score,
+        "currentZone": data.currentZone,
+        "deaths": data.deaths,
+        # Puedes añadir "updated_at": datetime.now()
+    }
+
+    # 1. Actualizar en la BD (función a crear en crud.py)
+    updated_game = crud.update_game_data(session_id, user.id, update_fields)
+
+    if not updated_game:
+        # Se lanza error 404 si la partida no existe o el user_id no coincide
+        raise HTTPException(404, "Game session not found or access denied.")
+
+    return {"message": "Game data updated successfully"}
+
+
+@app.get("/v1/games/{session_id}")
+def get_game_data(session_id: str, user = Depends(get_current_user)):
+    """
+    Consulta los datos de una partida específica usando su ID.
+    Útil para reanudar una partida guardada.
+    """
+    game_data = crud.get_game_data_by_id(session_id, user.id)
+
+    if not game_data:
+        raise HTTPException(404, "Game session not found or access denied.")
+
+    # Formatear la respuesta para Unity
+    response_data = GameData(
+        gameSessionID=game_data['id'],
+        score=game_data['score'],
+        currentZone=game_data['currentZone'],
+        deaths=game_data['deaths']
+    )
+    return response_data
+
 
 # ---------------------------------------------------------
 # FINAL

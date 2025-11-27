@@ -6,7 +6,6 @@ import os
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID")
 
-
 # ======================================================
 # PROFILES (opcional, si manejas perfil extra del usuario)
 # ======================================================
@@ -28,7 +27,6 @@ def get_profile(user_id: str):
     created = supabase.table("profiles").insert(default_profile).execute()
 
     return created.data[0]
-
 
 
 def update_profile(user_id: str, data: dict):
@@ -56,7 +54,6 @@ def create_profile(user_id: str, display_name: str = "", avatar_url: str = None)
 
     res = supabase.table("profiles").insert(payload).execute()
     return res.data[0]
-
 
 # ======================================================
 # MEDIA (wiki, personajes, escenarios, videos, etc.)
@@ -220,5 +217,66 @@ def sync_youtube_videos():
 
         inserted = supabase.table("media").insert(media).execute()
         new_items.append(inserted.data[0])
+
+        # ======================================================
+# GAMES DATA
+# ======================================================
+
+def create_game_session(data: dict):
+    """
+    Inserta un nuevo registro de partida en la tabla 'games'.
+    data debe incluir 'id' (UUID generado en main.py) y 'user_id'.
+    Retorna el registro creado.
+    """
+    try:
+        # El cliente de Supabase por defecto solo retorna los datos insertados
+        res = supabase.table("games").insert(data).execute()
+        return res.data[0] if res.data else None
+    except Exception as e:
+        print(f"Error creando sesión de juego: {e}")
+        return None
+
+
+def update_game_data(session_id: str, user_id: str, update_fields: dict):
+    """
+    Actualiza los campos (score, currentZone, deaths) de una partida existente.
+    Asegura que la partida pertenezca al user_id autenticado.
+    Retorna el registro actualizado o None.
+    """
+    try:
+        res = (
+            supabase.table("games")
+            .update(update_fields)
+            .eq("id", session_id)  # Busca por ID de partida
+            .eq("user_id", user_id)  # Restringe la actualización al dueño
+            .execute()
+        )
+        return res.data[0] if res.data else None
+    except Exception as e:
+        print(f"Error actualizando datos de partida {session_id}: {e}")
+        return None
+
+
+def get_game_data_by_id(session_id: str, user_id: str):
+    """
+    Obtiene los datos de una partida específica usando su ID.
+    Asegura que la partida pertenezca al user_id autenticado.
+    Retorna los datos del registro o None.
+    """
+    try:
+        res = (
+            supabase.table("games")
+            .select("*")
+            .eq("id", session_id)  # Busca por ID de partida
+            .eq("user_id", user_id)  # Restringe la consulta al dueño
+            .single() # Espera un único resultado
+            .execute()
+        )
+        # El método .single() de la librería de Supabase retorna el 'data' directamente
+        return res.data
+    except Exception:
+        # El cliente levanta una excepción si no encuentra el registro, 
+        # lo que indica que no existe o el usuario no es el dueño.
+        return None
 
     return new_items
