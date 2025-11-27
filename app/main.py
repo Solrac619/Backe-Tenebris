@@ -10,6 +10,20 @@ from pathlib import Path
 from datetime import datetime
 import uuid
 
+from tempfile import NamedTemporaryFile
+import shutil
+import os
+
+import requests
+from fastapi import Body
+
+from app.supabase_cliente import supabase
+from app.ai_embeddings import extract_pdf_chunks, store_embeddings, get_embedding
+
+import os
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+
 # ---------------------------------------------------------
 # CONFIG FASTAPI
 # ---------------------------------------------------------
@@ -145,6 +159,75 @@ def delete_media(media_id: str, user = Depends(get_current_user)):
     if not deleted:
         raise HTTPException(404, "Media not found or not allowed")
     return {"deleted": True}
+
+# IA / EMBEDDINGS
+
+@app.post("/v1/lore/process_pdf")
+async def process_pdf(pdf: UploadFile = File(...)):
+    """
+    1. Recibe el PDF
+    2. Lo trocea
+    3. Genera embeddings
+    4. Guarda en Supabase
+    """
+    # Guardar temporalmente
+    temp = NamedTemporaryFile(delete=False)
+    shutil.copyfileobj(pdf.file, temp)
+    temp.close()
+
+    # Extraer chunks del PDF
+    chunks = extract_pdf_chunks(temp.name)
+
+    # Guardarlos con embeddings
+    store_embeddings(chunks)
+
+    return {"chunks": len(chunks), "status": "ok"}
+
+
+
+GROQ_CHAT_MODEL = "llama-3.1-8b-instant"
+
+
+
+@app.post("/v1/lore/chat")
+async def lore_chat(question: str = Body(..., embed=True)):
+    q_emb = get_embedding(question)
+
+    query = supabase.rpc(
+        "match_embeddings",
+        {"query_embedding": q_emb, "match_count": 5}
+    ).execute()
+
+    if not query.data:
+        return {"answer": "No hay datos en el lore. Debes cargar un PDF primero."}
+
+    context_chunks = " ".join([r["chunk"] for r in query.data])
+
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+    payload = {
+        "model": GROQ_CHAT_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": "Eres la Guía de los Lamentos. Hablas con un tono místico, oscuro y poético. No inventes lore nuevo, solo usa el contexto."
+            },
+            {
+                "role": "user",
+                "content": f"Contexto del lore:\n{context_chunks}\n\nPregunta: {question}"
+            }
+        ]
+    }
+
+    r = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        json=payload,
+        headers=headers
+    ).json()
+
+    if "choices" not in r:
+        return {"answer": f"Groq falló: {r}"}
+
+    return {"answer": r["choices"][0]["message"]["content"]}
 
 
 # ---------------------------------------------------------
