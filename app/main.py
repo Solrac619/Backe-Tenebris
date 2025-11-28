@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.deps import get_current_user
 from app import crud
+from app.schemas import GameData
 
 from pathlib import Path
 from datetime import datetime
@@ -253,6 +254,24 @@ def get_game_data(session_id: str, user = Depends(get_current_user)):
         deaths=game_data['deaths']
     )
     return response_data
+
+@app.get("/v1/games/latest")
+def get_latest_game_data(user = Depends(get_current_user)):
+    """
+    Devuelve la partida más reciente del usuario autenticado.
+    Útil para apps móviles que necesitan sincronizar el progreso.
+    """
+    game_data = crud.get_latest_game_session(user.id)
+
+    if not game_data:
+        raise HTTPException(404, "No game session found for user.")
+
+    return GameData(
+        gameSessionID=game_data['id'],
+        score=game_data['score'],
+        currentZone=game_data['currentZone'],
+        deaths=game_data['deaths']
+    )
 
 
 # ---------------------------------------------------------
